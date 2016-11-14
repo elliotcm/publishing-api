@@ -3,6 +3,8 @@ default: &default
   encoding: unicode
   pool: 5
   template: template0
+  username: postgres
+  host: db
 
 development:
   <<: *default
