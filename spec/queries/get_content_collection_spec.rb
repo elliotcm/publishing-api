@@ -97,6 +97,34 @@ RSpec.describe Queries::GetContentCollection do
     ])
   end
 
+  context "for unpublished content" do
+    it "can include information about the unpublishing" do
+      content_item = FactoryGirl.create(
+        :unpublished_content_item,
+        document_type: "topic",
+      )
+      unpublishing = Unpublishing.find_by(content_item_id: content_item.id)
+
+      expect(
+        Queries::GetContentCollection.new(
+          document_types: 'topic',
+          fields: %w(base_path publication_state unpublishing),
+        ).call
+      ).to match_array(
+        [
+          hash_including(
+            "unpublishing" => hash_including(
+              "explanation" => unpublishing.explanation,
+              "type" => unpublishing.type,
+              "alternative_path" => unpublishing.alternative_path,
+              "unpublished_at" => unpublishing.unpublished_at
+            )
+          )
+        ]
+      )
+    end
+  end
+
   context "when there's no items for the format" do
     it "returns an empty array" do
       expect(Queries::GetContentCollection.new(

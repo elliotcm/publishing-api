@@ -9,6 +9,7 @@ module Presenters
       DEFAULT_FIELDS = ([
         *ContentItem::TOP_LEVEL_FIELDS,
         :publication_state,
+        :unpublishing,
         :user_facing_version,
         :base_path,
         :locale,
@@ -67,6 +68,13 @@ module Presenters
       def join_supporting_objects(scope)
         scope = ChangeNote.join_content_items(scope)
 
+        if fields.include? :unpublishing
+          scope = scope.joins(
+            "LEFT OUTER JOIN unpublishings
+             ON content_items.id = unpublishings.content_item_id"
+          )
+        end
+
         LockVersion.join_content_items(scope)
       end
 
@@ -97,6 +105,8 @@ module Presenters
             "to_char(first_published_at, '#{ISO8601_SQL}') as first_published_at"
           when :state_history
             "#{STATE_HISTORY_SQL} AS state_history"
+          when :unpublishing
+            "#{UNPUBLISHING_SQL} AS unpublishing"
           when :change_note
             "change_notes.note AS change_note"
           when :base_path
@@ -127,10 +137,37 @@ module Presenters
         )
       SQL
 
+      # Creating a JSON object with specified keys in PostgreSQL 9.3
+      # is a little awkward, but is possible through the use of column
+      # aliases
+      UNPUBLISHING_SQL = <<-SQL.freeze
+        (
+          SELECT
+            CASE WHEN unpublishings.content_item_id IS NULL THEN NULL
+                 ELSE row_to_json(unpublishing_data)
+            END
+          FROM (
+            VALUES (
+              unpublishings.type,
+              unpublishings.explanation,
+              unpublishings.alternative_path,
+              unpublishings.unpublished_at
+            )
+          )
+          AS
+          unpublishing_data(
+            type,
+            explanation,
+            alternative_path,
+            unpublished_at
+          )
+        )
+      SQL
+
       ISO8601_SQL = "YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"".freeze
 
       def parse_results(results)
-        json_columns = %w(details routes redirects need_ids state_history)
+        json_columns = %w(details routes redirects need_ids state_history unpublishing)
         int_columns = %w(user_facing_version lock_version)
 
         Enumerator.new do |yielder|
