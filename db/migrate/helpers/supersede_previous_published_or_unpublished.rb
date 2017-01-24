@@ -1,8 +1,7 @@
 module Helpers
   module SupersedePreviousPublishedOrUnpublished
     def self.run
-      state_histories = Edition
-        .joins(:document)
+      state_histories = Edition.with_document
         .where(state: %w(published unpublished))
         .group("documents.content_id", :locale)
         .having("count(documents.content_id) > 1")
