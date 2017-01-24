@@ -14,36 +14,9 @@ class ContentConsistencyChecker
     routes.each do |route|
       path = route["path"]
 
-      # draft item won't be in the router
-      check_item_route(route) unless state == "draft"
+      check_item_route(route)
 
-      begin
-        live_res = live_content_store.content_item(path).parsed_content
-        res = live_res
-      rescue GdsApi::ContentStore::ItemNotFound
-        if state == "published"
-          @errors << "content-store: State is published but the content is not " \
-                    "in live content store."
-          next
-        end
-      rescue GdsApi::HTTPForbidden
-        @errors << "content-store: HTTP 403 response."
-        next
-      end
-
-      begin
-        draft_res = draft_content_store.content_item(path).parsed_content
-        res = draft_res
-      rescue GdsApi::ContentStore::ItemNotFound
-        if state == "draft"
-          @errors << "content-store: State is draft but the content is not in " \
-                     "the draft content store."
-          next
-        end
-      rescue GdsApi::HTTPForbidden
-        @errors << "content-store: HTTP 403 response."
-        next
-      end
+      next unless (content_store_item = item_from_content_store(path))
 
       if state == "gone"
         @errors << "content-store: State is gone but the content exists in a " \
@@ -51,18 +24,19 @@ class ContentConsistencyChecker
       end
 
       if state == "gone" && handler != "gone"
-        @errors << "content-store: State claims to be gone but handler is not."
+        @errors << "router: State claims to be gone but handler is not."
       end
 
       if (%w(published draft).include? state) && handler != "backend"
-        @errors << "content-store: State is published or draft but handler " \
+        @errors << "router: State is published or draft but handler " \
                    "is not backend."
       end
 
       unless state == "gone"
-        if res["rendering_app"] != rendering_app
-          @errors << "content-store: Rendering app (#{res["rendering_app"]}) " \
-                     "does not match backend_id (#{rendering_app})."
+        if content_store_item["rendering_app"] != rendering_app
+          @errors << "content-store: Rendering app " \
+                     "(#{content_store_item["rendering_app"]}) does not " \
+                     "match backend_id (#{rendering_app})."
         end
       end
     end
@@ -71,6 +45,21 @@ class ContentConsistencyChecker
   end
 
 private
+
+  def content_store
+    state == "published" ? live_content_store : draft_content_store
+  end
+
+  def item_from_content_store(path)
+    begin
+      content_store.content_item(path).parsed_content
+    rescue GdsApi::ContentStore::ItemNotFound
+      @errors << "content-store: State is published but the content is not " \
+        "in live content store."
+    rescue GdsApi::HTTPForbidden
+      @errors << "content-store: HTTP 403 response."
+    end
+  end
 
   def check_item_redirect(redirect)
     path = redirect["path"]
@@ -98,6 +87,8 @@ private
   end
 
   def check_item_route(route)
+    return if state == "draft"
+
     path = route["path"]
 
     begin
