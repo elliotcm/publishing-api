@@ -90,7 +90,7 @@ RSpec.describe ContentConsistencyChecker do
         before do
           stub_request(:get, "http://router-api.dev.gov.uk/routes?incoming_path=#{item.base_path}").
             and_return(:status => 404)
-          stub_content_store("draft", {}, item.base_path)
+          stub_content_store("live", {}, item.base_path)
         end
 
         it "should produce an error" do
@@ -109,7 +109,7 @@ RSpec.describe ContentConsistencyChecker do
             route_type: "exact",
           }, item.base_path)
 
-          stub_content_store("draft", {}, item.base_path)
+          stub_content_store("live", {}, item.base_path)
         end
 
         it "should produce an error" do
@@ -128,7 +128,7 @@ RSpec.describe ContentConsistencyChecker do
             route_type: "exact",
           }, item.base_path)
 
-          stub_content_store("draft", {}, item.base_path)
+          stub_content_store("live", {}, item.base_path)
         end
 
         it "should produce an error" do
@@ -147,7 +147,7 @@ RSpec.describe ContentConsistencyChecker do
             route_type: "exact",
           }, item.base_path)
 
-          stub_content_store("draft", {}, item.base_path)
+          stub_content_store("live", {}, item.base_path)
         end
 
         it "should produce an error" do
@@ -198,8 +198,9 @@ RSpec.describe ContentConsistencyChecker do
         let(:item) { FactoryGirl.create(:live_content_item) }
         before do
           stub_router({
+            backend_id: "frontend",
             disabled: false,
-            handler: "gone",
+            handler: "backend",
             incoming_path: item.base_path,
             route_type: "exact",
           }, item.base_path)
@@ -209,7 +210,7 @@ RSpec.describe ContentConsistencyChecker do
 
         it "should produce an error" do
           expect(subject).not_to be_empty
-          expect(subject.first).to match(/the content exists in a content store/)
+          expect(subject.first).to match(/content is not in live content store/)
         end
       end
     end
