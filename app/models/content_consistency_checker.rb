@@ -88,18 +88,18 @@ private
       return
     end
 
-    if res["backend_id"] != backend_id
+    if res["handler"] != expected_handler
+      @errors << "router-api: Handler (#{res["handler"]}) does not match " \
+                 "expected item handler (#{expected_handler})."
+    end
+
+    if res["backend_id"] != rendering_app
       @errors << "router-api: Backend ID (#{res["backend_id"]}) does not " \
-                 "match item backend (#{backend_id})."
+                 "match item rendering app (#{rendering_app})."
     end
 
     if res["disabled"]
       @errors << "router-api: Item is marked as disabled."
-    end
-
-    if res["handler"] != expected_handler
-      @errors << "router-api: Handler (#{res["handler"]}) does not match " \
-                 "expected item handler (#{expected_handler})."
     end
   end
 
@@ -118,10 +118,6 @@ private
     item["schema_name"]
   end
 
-  def backend_id
-    item["rendering_app"]
-  end
-
   def state
     item["publication_state"]
   end
@@ -129,7 +125,7 @@ private
   def expected_handler
     if redirects.any?
       "redirect"
-    elsif backend_id.nil?
+    elsif rendering_app.nil?
       "gone"
     else
       "backend"
