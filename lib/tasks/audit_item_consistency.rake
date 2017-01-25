@@ -1,6 +1,3 @@
-require 'gds_api/content_store'
-require 'gds_api/router'
-
 namespace :audit_item_consistency do
   def check_content_item(content_id)
     checker = ContentConsistencyChecker.new(content_id)

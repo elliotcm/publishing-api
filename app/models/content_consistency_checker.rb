@@ -1,3 +1,6 @@
+require 'gds_api/content_store'
+require 'gds_api/router'
+
 class ContentConsistencyChecker
   attr_reader :content_id
 
@@ -7,6 +10,8 @@ class ContentConsistencyChecker
   end
 
   def call
+    return @errors unless item
+
     redirects.each do |redirect|
       check_item_redirect(redirect)
     end
@@ -18,26 +23,15 @@ class ContentConsistencyChecker
 
       next unless (content_store_item = item_from_content_store(path))
 
-      if state == "gone"
+      if document_type == "gone" || schema_name == "gone"
         @errors << "content-store: State is gone but the content exists in a " \
                    "content store."
       end
 
-      if state == "gone" && handler != "gone"
-        @errors << "router: State claims to be gone but handler is not."
-      end
-
-      if (%w(published draft).include? state) && handler != "backend"
-        @errors << "router: State is published or draft but handler " \
-                   "is not backend."
-      end
-
-      unless state == "gone"
-        if content_store_item["rendering_app"] != rendering_app
-          @errors << "content-store: Rendering app " \
-                     "(#{content_store_item["rendering_app"]}) does not " \
-                     "match backend_id (#{rendering_app})."
-        end
+      if content_store_item["rendering_app"] != rendering_app
+        @errors << "content-store: Rendering app " \
+                   "(#{content_store_item["rendering_app"]}) does not " \
+                   "match item rendering app (#{rendering_app})."
       end
     end
 
@@ -47,18 +41,19 @@ class ContentConsistencyChecker
 private
 
   def content_store
-    state == "published" ? live_content_store : draft_content_store
+    item["content_store"] == "live" ? live_content_store : draft_content_store
   end
 
   def item_from_content_store(path)
     begin
-      content_store.content_item(path).parsed_content
+      return content_store.content_item(path).parsed_content
     rescue GdsApi::ContentStore::ItemNotFound
       @errors << "content-store: State is published but the content is not " \
         "in live content store."
     rescue GdsApi::HTTPForbidden
       @errors << "content-store: HTTP 403 response."
     end
+    nil
   end
 
   def check_item_redirect(redirect)
@@ -79,11 +74,6 @@ private
       @errors << "router-api: Route destination (#{res["redirect_to"]}) " \
                  "does not match item destination (#{redirect["destination"]})."
     end
-
-    if res["route_type"] != redirect["type"]
-      @errors << "router-api: Route type (#{res["route_type"]}) does not " \
-                 "match item route type (#{redirect["type"]})."
-    end
   end
 
   def check_item_route(route)
@@ -98,11 +88,6 @@ private
       return
     end
 
-    if res["route_type"] != route["type"]
-      @errors << "router-api: Route type (#{res["route_type"]}) does not " \
-                 "match item route type (#{route["type"]})."
-    end
-
     if res["backend_id"] != backend_id
       @errors << "router-api: Backend ID (#{res["backend_id"]}) does not " \
                  "match item backend (#{backend_id})."
@@ -112,14 +97,25 @@ private
       @errors << "router-api: Item is marked as disabled."
     end
 
-    if res["handler"] != handler
+    if res["handler"] != expected_handler
       @errors << "router-api: Handler (#{res["handler"]}) does not match " \
-                 "item handler (#{handler})."
+                 "expected item handler (#{expected_handler})."
     end
   end
 
   def item
     @item ||= Queries::GetContent.(content_id)
+  rescue CommandError
+    @errors << "publishing-api: Content (#{content_id}) could not be found."
+    @item ||= nil
+  end
+
+  def document_type
+    item["document_type"]
+  end
+
+  def schema_name
+    item["schema_name"]
   end
 
   def backend_id
@@ -130,8 +126,14 @@ private
     item["publication_state"]
   end
 
-  def handler
-    %w(published superseded unpublished).include?(state) ? "backend" : state
+  def expected_handler
+    if redirects.any?
+      "redirect"
+    elsif backend_id.nil?
+      "gone"
+    else
+      "backend"
+    end
   end
 
   def redirects

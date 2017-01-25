@@ -59,5 +59,7 @@ FactoryGirl.define do
     sequence(:base_path) { |n| "/dodo-sanctuary-#{n}" }
     schema_name "gone"
     document_type "gone"
+    state "superseded"
+    rendering_app nil
   end
 end
