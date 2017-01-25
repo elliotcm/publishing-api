@@ -1,5 +1,146 @@
 # Publishing API's Model
 
+This document serves as a broad introduction to the domain models used in
+the Publishing API and their respective purposes. They can be separated into
+3 areas of concern:
+
+- Content - Content that is stored in the Publishing API
+- Links - Links between content that is stored
+- History - The storing of operations that affect content or links.
+
+These areas are all interconnected through the use of shared `content_id`
+fields.
+
+## content_id
+
+`content_id` is a [UUID][uuid] value that is used to identify distinct pieces
+of content that are used on GOV.UK. It is generated from within a publishing
+application and the same content_id is used for content that is available in
+multiple translations. Different iterations of the same piece of content all
+share the same content_id.
+
+Each piece of content stored in the Publishing API is associated with a
+content_id, the links stored are relationships stored between content_ids, and
+history is associated with a content_id.
+
+# Content
+
+diagram
+
+## Document
+
+A document represents all iterations of a piece of content in a particular
+locale. It is associated with multiple editions that represent distinct
+versions of a piece of content.
+
+The concerns of a document are which iterations are represented on draft and
+live content stores; and the [lock version][optimistic-locking] for the content.
+
+A document stores the [content_id](#content_id), locale and lock version for
+content. It is designed to be a simple model so that it can be used for
+database level locking of concurrent requests.
+
+## Edition
+
+An edition is a particular iteration of a piece of content. It stores nearly
+all of the data that is used to represent content in the content store and is
+associated with a document. There are [uniqueness constraints](#uniqueness)
+to ensure there are not conflicting Editions. Previously an Edition was named
+ContentItem.
+
+Most of the fields stored on an edition are defined as part of the
+[/put-content/:content_id](api.md#put-v2contentcontent_id) API.
+
+Key fields that are set internally by the Publishing API are:
+
+- `state` - where an edition is in it's [publishing workflow](#workflow), can
+  be "draft", "published", "unpublished" or "superseded".
+- `content_store` - indicates whether an edition is on the draft or live
+  content store, or could be empty indicating it is not on a content store.
+- `user_facing_version` - an integer that stores which iteration of a document
+  an edition is.
+
+### Workflow
+
+An edition can be in one of four states: "draft", "published", "unpublished"
+and "superseded".
+
+At any one time a document can contain:
+
+- 1 edition in a "draft" state
+- 1 edition in a "published" or "unpublished" state
+- any number of editions in a "superseded" state
+
+When the first edition of a document is created it is in a "draft" state and
+given a `user_facing_version` of 1. The content can be updated any number of
+times before publishing, each update will not change the `user_facing_version`.
+A new draft cannot be created while there is a draft. When a draft exists it
+will be available on the draft content store.
+
+An edition can be published. This will change the `state` of the edition to
+be published and put the edition on the live content store. Once an edition has
+been published it is possible to create a new edition of the draft - thereby
+having 1 draft edition and 1 published edition of a document.
+
+A published edition can be unpublished, which will update the `state` to
+"unpublished" and create an [`unpublishing`](#unpublishing) for the edition.
+The unpublished edition will be represented on the live content store.
+
+If a draft is published while there is already a published or unpublished
+edition. The previously published or unpublished edition will have it's `state`
+updated to "superseded" and will be replaced on the live content store with the
+newly published edition.
+
+### Uniqueness
+
+There are uniqueness constraints to ensure conflicting editions cannot be
+stored:
+
+- **No two editions can share the same `base_path` and `content_store` values.**
+  This ensures there can't be multiple documents that are trying to use the
+  same URL on GOV.UK.
+- **For a document there can't be two editions with the same `user_facing_version`.**
+  This prevents there being two editions sharing the same version number.
+- **For a document there can't be two editions on the same content store.** This
+  prevents an edition being accidentally available in multiple versions in,
+  potentially, multiple places.
+
+### Substitution
+
+When creating and publishing editions normally an existing edition with the
+same base_path will be blocked due to [uniqueness constraints](#uniqueness).
+However when one of the items that conflicts is considered substitutable
+(typically a non-content type) the operation can continue and the blocking item
+will be discarded, if it is a draft; or [unpublished](#unpublishing) if it
+is published.
+
+## Unpublishing
+
+When an edition is unpublished an Unpublishing model is used to represent the
+type of unpublishing and associated meta data so that the unpublished edition
+can be represented correctly in the content store.
+
+There are 5 types an unpublishing can be:
+
+- **`withdrawal`** - The edition will still be readable on GOV.UK but will have a
+  withdrawn banner, provided with an `explanation` and an optional
+  `alternative_path`.
+- **`redirect`** - Attempts to access the edition on GOV.UK will be redirected to a
+  provided `alternative_path`
+- **`gone`** - Attempts to access the edition on GOV.UK will receive a 410 Gone
+  HTTP response.
+- **`vanish`** - Attempts to access the edition on GOV.UK will receive a 404 Not
+  Found HTTP response.
+- **`substitute`** - This type cannot be set by a user and is automatically
+  created when an edition is [substituted](#substitution).
+
+
+
+[uuid]: https://en.wikipedia.org/wiki/Universally_unique_identifier
+[optimistic-locking]: api.md#optimistic-locking-previous_version
+
+# Publishing API's Model
+
 This document outlines the Publishing API's model in moderate detail and
 explains some of the design decisions and business needs for it.
 
